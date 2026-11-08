@@ -1,5 +1,7 @@
 # dsh-music-player
 
+> 这是 Drip 的增强 fork：番茄书架/阅读器、本地 TTS 按需模型、网易云解灰等。安装与可选组件说明见 [FORK.md](FORK.md)；以下为上游原始说明。
+
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 
 DeepSeek Harness 音乐/小说播放插件。
