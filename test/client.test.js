@@ -1969,6 +1969,28 @@ describe('dsh-music-player client render smoke', () => {
     expect(panelEl.style.display).toBe('none')
   })
 
+  it('番茄详情按 Escape 只关详情，保留播放器并归还焦点', async () => {
+    vi.stubGlobal('fetch', (url, opts) => url === '/dsh-music/fanqie/shelf'
+      ? jsonRes({ ok: true, available: true, total: 1, downloadedCount: 0, groups: [], books: [{ bookId: '1234567890123456789', title: '测试小说', author: '作者', description: '简介', status: '连载中', group: '', chapterCount: 20 }] })
+      : fetchStub(url, opts))
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(React.createElement(React.Fragment, null,
+        registered.find(r => r.id === 'music-player-bar').elementFactory(),
+        registered.find(r => r.id === 'music-player-panel').elementFactory())))
+      await act(async () => container.querySelector('button[title="打开播放列表"]').click())
+      await act(async () => [...container.querySelectorAll('.dsh-music-tab')].find(b => b.textContent === '番茄书架').click())
+      const card = container.querySelector('.dsh-music-fqcard'); expect(card).toBeTruthy(); card.focus()
+      await act(async () => card.click())
+      expect(document.querySelector('.dsh-music-fqdetail-mask')).toBeTruthy()
+      await act(async () => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      expect(container.querySelector('.dsh-music-panel').style.display).not.toBe('none')
+      expect(document.querySelector('.dsh-music-fqdetail-mask')).toBeNull()
+      expect(document.activeElement).toBe(card)
+    } finally { await act(async () => root.unmount()); container.remove(); vi.stubGlobal('fetch', fetchStub) }
+  })
+
   it('Escape while an inner picker overlay is open closes only the overlay, not the panel', async () => {
     // 新建/重命名歌单等 prompt（portal 到 body 的 .dsh-music-picker-overlay）打开时
     // 按 Esc：面板保持打开，弹层自行关闭（PromptModal 自带的 onKeyDown 处理）。
@@ -4144,7 +4166,10 @@ describe('dsh-music-player client render smoke', () => {
       emit(type) { (this.listeners[type] || []).forEach((fn) => fn({ target: this })) }
     }
     vi.resetModules(); registered = []; lastFilesUrl = null
-    manifest = { ...baseManifest(), ttsConfigured: true, ttsReason: '', books: [{ id: 'b1', name: bookName, url: '/dsh-music/book/b1', size: 100, ext: 'txt' }] }
+    manifest = { ...baseManifest(), ttsConfigured: true, ttsReason: '', voices: [
+      { id: 'local:test:0', label: '测试音色0', gender: '女', lang: '中文' },
+      { id: 'local:test:1', label: '测试音色1', gender: '男', lang: '中文' },
+    ], books: [{ id: 'b1', name: bookName, url: '/dsh-music/book/b1', size: 100, ext: 'txt' }] }
     bookMetaSections = sections || []
     bookCharOffsets = charOffsets
     bookTextFixture = text
@@ -4299,7 +4324,7 @@ describe('dsh-music-player client render smoke', () => {
     expect(pops.length).toBeGreaterThan(0)
     const sel = pops[pops.length - 1].querySelector('.dsh-music-voice-select')
     expect(sel).toBeTruthy()
-    expect(sel.value).toBe('白桦') // 本用例是全新实例：默认声音
+    expect(sel.value).toBe('local:test:0') // 本用例是全新实例：默认声音
     // 换声音会先 fetch 新声音的整块音频并调用 r.arrayBuffer()（fetchStub 没有该方法）
     vi.stubGlobal('fetch', (url, opts) => {
       const p = fetchStub(url, opts)
@@ -4307,7 +4332,7 @@ describe('dsh-music-player client render smoke', () => {
     })
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set
-      setter.call(sel, '冰糖')
+      setter.call(sel, 'local:test:1')
       sel.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
@@ -11059,10 +11084,10 @@ describe('dsh-music-player client render smoke', () => {
     act(() => { configTab.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
 
-    // six toggle rows (歌词显示 / 歌词面板透明 / 频谱显示 / 音质徽章显示 / 进度条显示 / 播放条背景显示)，
-    // 默认全开；跑马灯/边缘渐隐是内置行为，不再提供开关。
     const toggles = [...container.querySelectorAll('.dsh-music-toggle')]
-    expect(toggles.length).toBe(6)
+    expect(toggles.length).toBe(7)
+    const unblock = [...container.querySelectorAll('.dsh-music-config-row')].find(row => row.textContent.includes('网易云解灰兜底')).querySelector('.dsh-music-toggle')
+    expect(unblock.getAttribute('aria-checked')).toBe('false')
     expect(toggles[0].getAttribute('aria-checked')).toBe('true') // 歌词显示
     expect(toggles[1].getAttribute('aria-checked')).toBe('true') // 歌词面板透明（默认开，紧跟歌词卡片下方）
     expect(toggles[2].getAttribute('aria-checked')).toBe('true') // 频谱显示
@@ -12649,15 +12674,15 @@ describe('news pane（新闻播报页签）', () => {
       await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
       const bookHint = container.querySelector('.dsh-music-tts-hint')
       expect(bookHint).toBeTruthy()
-      expect(bookHint.textContent).toContain('1. 支持 .txt / .epub 等格式。')
-      expect(bookHint.textContent).toContain('2. AI 语音目前仅支持 xiaomi 提供方（限时免费），请在 DSH 设置中配置好再使用。')
+      expect(bookHint.textContent).toContain('1. 支持 .txt / .epub 等格式')
+      expect(bookHint.textContent).toContain('2. 默认使用内置本地音色')
       // 新闻播报：底部为编号列表（xiaomi 语音 + DeepSeek 搜索提示，分行显示）
       const newsTab = [...container.querySelectorAll('.dsh-music-tab')].find((b) => b.textContent === '新闻播报')
       act(() => { newsTab.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
       await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
       const newsHint = container.querySelector('.dsh-music-tts-hint')
       expect(newsHint).toBeTruthy()
-      expect(newsHint.textContent).toContain('1. AI 语音目前仅支持 xiaomi 提供方（限时免费），请在 DSH 设置中配置好再使用。')
+      expect(newsHint.textContent).toContain('1. AI 语音默认使用内置本地音色')
       expect(newsHint.textContent).toContain('2. 新闻收集需要 DeepSeek 搜索服务（web_search 使用 DeepSeek 官方 API），请在 DSH 设置中配置好再使用。')
       expect(newsHint.textContent.includes('支持 .txt')).toBe(false)
       // 本地音乐：底部为单条格式说明（顶部设置块不再显示提示）
